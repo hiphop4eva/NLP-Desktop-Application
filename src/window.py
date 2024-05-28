@@ -31,12 +31,8 @@ class MainWindow(QDialog):
 
         self.fileDict = {}
 
-        self.fileDf = DataFrame({
-                "FileName": [""],
-                "FileDir": [""],
-                "Text": [""],
-                "ComparisonResults": [""] 
-            })
+        self.databaseProcessor.readJson()
+        self.fileDf = self.databaseProcessor.fileDf
 
         self.setWindowTitle("NLP Application")
         icon = QIcon()
@@ -51,46 +47,52 @@ class MainWindow(QDialog):
 
         self.initFiles()
 
+        print(self.fileDf)
+        print("-------------------------")
+
     def initFiles(self):
         files = self.databaseProcessor.getAllFiles()
-        nltkProcessor = self.nltkProcessor
-        fileBoxLayout = self.mainLayout.actionsLayout.fileBoxLayout
         comparisonLayout = self.mainLayout.actionsLayout.comparisonLayout
 
+        index = 0
         for row in files:
-            indexOriginal = row[0] - 1
-            name = row[1]
-            fileDir = row[2]
-            text, textInfo, icon, iconType = self.fileProcessor.readFile(fileDir)
+            name = row[0]
+            fileDir = row[1]
+            text = row[2]
+            textInfo, icon, iconType = self.fileProcessor.readFile(fileDir, text=text)
             file = self.fileProcessor.initFile(name, fileDir, icon, text, textInfo)
 
+            rowCount = self.fileDf.shape[0]
             self.actionsLayout.addFile(file, setChecked = False)
-            self.fileDict[indexOriginal] = file
+            self.fileDict[index] = file
             self.fileDict[name] = file
-            fileSeries = Series([name, fileDir, text, ""])
-            self.fileDf.loc[len(self.fileDf)] = fileSeries
+
+            index += 1
 
         comparisonLayout.hide()
 
     def rearrangeFileIds(self, index):
         indexDatabase = index + 1
         fileDict = self.fileDict
-        length = int(len(fileDict)/2) + 1
+        length = int(len(fileDict)/2)
 
-        for i in range(0, length):
+        for i in range(0, length + 1):
             if i > index:
                 file = fileDict[i]
                 fileDict.pop(i)
                 fileDict[i - 1] = file
 
-        lengthDf = int(len(self.fileDf)/2)
+        lengthDf = len(self.fileDf)
+        i = 0
         for i in range(0, lengthDf + 1):
-            if i == lengthDf:
-                self.fileDf = self.fileDf.drop(i)
-            elif i > index:
-                self.fileDf.iloc[i - 1] = self.fileDf.iloc(i)
+            if i > index:
+                self.fileDf.loc[i - 1] = self.fileDf.loc[i]
+                self.fileDf.drop(i, inplace=True)
+            
+        print(self.fileDf)
+        print("-------------------------")
 
-        self.databaseProcessor.rearrangeFileIds(indexDatabase)
+        self.databaseProcessor.writeJson()
         self.actionsLayout.rearrangeFileIds(index)
 
 class MainLayout(QGridLayout):
@@ -247,60 +249,73 @@ class FileProcessor:
         file = FileClass(fileName, fileDir, icon, text, textInfo)
         return file
 
-    def readFile(self, fileDir):
+    def readFile(self, fileDir, text = ""):
         nltkProc = self.mainWindow.nltkProcessor
         icon = QIcon()
-        text = ""
+        readText = False
+        if text == "":
+            readText = True
         iconType = ""
 
         if fileDir[-4:] == ".txt":
-            text = open(fileDir, "r", encoding="utf-8").read()
+            if readText:
+                text = open(fileDir, "r", encoding="utf-8").read()
             icon.addFile(iconDict["textIcon"])
             iconType = "textIcon"
 
         elif fileDir[-4:] == ".pdf":
-            pdf = pypdf.PdfReader(fileDir)
-            text = ""
-            for page in pdf.pages:
-                text += page.extract_text()
+            if readText:
+                pdf = pypdf.PdfReader(fileDir)
+                text = ""
+                for page in pdf.pages:
+                    text += page.extract_text()
             icon.addFile(iconDict["pdfIcon"])
             iconType = "pdfIcon"
 
         elif fileDir[-3:] == ".py":
-            text = open(fileDir, "r", encoding="utf-8").read()
+            if readText:
+                text = open(fileDir, "r", encoding="utf-8").read()
             icon.addFile(iconDict["pyIcon"])
             iconType = "pyIcon"
 
         elif fileDir[-4:] == ".cpp":
-            text = open(fileDir, "r", encoding="utf-8").read()
+            if readText:
+                text = open(fileDir, "r", encoding="utf-8").read()
             icon.addFile(iconDict["cppIcon"])
             iconType = "cppIcon"
 
         elif fileDir[-2:] == ".c":
-            text = open(fileDir, "r", encoding="utf-8").read()
+            if readText:
+                text = open(fileDir, "r", encoding="utf-8").read()
             icon.addFile(iconDict["cIcon"])
             iconType = "cIcon"
 
         elif fileDir[-3:] == ".cs":
-            text = open(fileDir, "r", encoding="utf-8").read()
+            if readText:
+                text = open(fileDir, "r", encoding="utf-8").read()
             icon.addFile(iconDict["csIcon"])
             iconType = "csIcon"
 
         elif fileDir[-5:] == ".docx":
-            doc = docx.Document(fileDir)
-            for para in doc.paragraphs:
-                text += para.text
-                text += "\n"
+            if readText:
+                doc = docx.Document(fileDir)
+                for para in doc.paragraphs:
+                    text += para.text
+                    text += "\n"
             icon.addFile(iconDict["docxIcon"])
             iconType = "docxIcon"
 
         else:
-            text = fileDir
+            if readText:
+                text = fileDir
             icon.addFile(iconDict["miscIcon"])
             iconType = "miscIcon"
 
         textInfo = nltkProc.processTextInfo(text)
-        return text, textInfo, icon, iconType
+        if readText:
+            return text, textInfo, icon, iconType
+        else:
+            return textInfo, icon, iconType
 
 class FileBoxLayout(QVBoxLayout):
     def __init__(self, mainWindow):
@@ -309,6 +324,7 @@ class FileBoxLayout(QVBoxLayout):
         self.mainWindow = mainWindow
         mainWindow.fileBoxLayout = self
 
+        self.fileDf = self.mainWindow.fileDf
         self.fileDict = self.mainWindow.fileDict
         self.filesLayout = FilesLayout(exclusive=True)
         self.buttonLayout = QHBoxLayout()
@@ -371,7 +387,7 @@ class FileBoxLayout(QVBoxLayout):
 
         if self.fileDict.get(file.fileName) == None:
             actionsLayout.addFile(file)
-            databaseProcessor.insertFile(file.fileName, file.fileDir)
+            databaseProcessor.writeJson()
             fileTextLayout.editBoxes(file)
         else:
             dialogBox = QMessageBox(self.mainWindow)
@@ -391,7 +407,6 @@ class FileBoxLayout(QVBoxLayout):
 
             if dialogBox.clickedButton().text() == "&Yes":
                 index = self.filesLayout.getCurrentCheckedIndex()
-                indexDatabase = index + 1
 
                 actionsLayout.deleteFile(index)
 
@@ -399,7 +414,6 @@ class FileBoxLayout(QVBoxLayout):
                     self.fileDict.pop(self.fileDict[index].fileName)
                     self.fileDict.pop(index)
 
-                self.mainWindow.databaseProcessor.deleteFile(indexDatabase)
                 self.mainWindow.rearrangeFileIds(index)
         else:
             dialogBox.setText("There is no file to delete!")
@@ -412,12 +426,19 @@ class FileBoxLayout(QVBoxLayout):
         self.fileDict[fileClass.fileName] = fileClass
         self.fileDict[index] = fileClass
         self.filesLayout.addFile(fileClass, setChecked = setChecked)
+
+        self.fileDf.loc[index] = {"FileName": fileClass.fileName, "FileDir": fileClass.fileDir, "Text": fileClass.text, "ComparisonResults": ""}
  
     def deleteFile(self, index):
         fileTextLayout = self.mainWindow.fileTextLayout
 
         self.filesLayout.deleteFile(index)
         fileTextLayout.editBoxes(0)
+
+        self.fileDf.drop(index, inplace=True)
+
+        print(self.fileDf)
+        print("-------------------------")
 
     def rearrangeFileIds(self, index):
         self.filesLayout.rearrangeFileIds(index)
