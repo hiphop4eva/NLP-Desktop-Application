@@ -8,6 +8,7 @@ from PyQt6.QtGui import *
 from PyQt6.QtWidgets import *
 from pyqtgraph import PlotWidget, plot, mkPen
 from pyqtgraph.graphicsItems.ViewBox.ViewBox import ViewBox
+from pandas import DataFrame, Series
 
 app = QApplication(sys.argv)
 
@@ -16,10 +17,10 @@ iconCacheDict = {}
 
 for i in ["text", "pdf", "docx", "c", "cpp", "cs", "py", "misc"]:
     icon = QIcon()
-    icon.addFile(f"src/resources/images/{i}Icon.png")
+    icon.addFile(f"resources/images/{i}Icon.png")
     iconKey = icon.cacheKey()
-    iconDict[f"{i}Icon"] = f"src/resources/images/{i}Icon.png"
-    iconCacheDict[iconKey] = f"src/resources/images/{i}Icon.png"
+    iconDict[f"{i}Icon"] = f"resources/images/{i}Icon.png"
+    iconCacheDict[iconKey] = f"resources/images/{i}Icon.png"
 
 class MainWindow(QDialog):
     def __init__(self, nltkProcessor, databaseProcessor):
@@ -30,9 +31,16 @@ class MainWindow(QDialog):
 
         self.fileDict = {}
 
+        self.fileDf = DataFrame({
+                "FileName": [""],
+                "FileDir": [""],
+                "Text": [""],
+                "ComparisonResults": [""] 
+            })
+
         self.setWindowTitle("NLP Application")
         icon = QIcon()
-        icon.addFile("src/resources/images/bocchiIcon.png")
+        icon.addFile("resources/images/bocchiIcon.png")
         self.setWindowIcon(icon)
         self.setGeometry(100, 100, 1000, 600)
         self.fileProcessor = FileProcessor(self)
@@ -59,6 +67,8 @@ class MainWindow(QDialog):
             self.actionsLayout.addFile(file, setChecked = False)
             self.fileDict[indexOriginal] = file
             self.fileDict[name] = file
+            fileSeries = Series([name, fileDir, text, ""])
+            self.fileDf.loc[len(self.fileDf)] = fileSeries
 
         comparisonLayout.hide()
 
@@ -72,6 +82,13 @@ class MainWindow(QDialog):
                 file = fileDict[i]
                 fileDict.pop(i)
                 fileDict[i - 1] = file
+
+        lengthDf = int(len(self.fileDf)/2)
+        for i in range(0, lengthDf + 1):
+            if i == lengthDf:
+                self.fileDf = self.fileDf.drop(i)
+            elif i > index:
+                self.fileDf.iloc[i - 1] = self.fileDf.iloc(i)
 
         self.databaseProcessor.rearrangeFileIds(indexDatabase)
         self.actionsLayout.rearrangeFileIds(index)
@@ -374,7 +391,16 @@ class FileBoxLayout(QVBoxLayout):
 
             if dialogBox.clickedButton().text() == "&Yes":
                 index = self.filesLayout.getCurrentCheckedIndex()
+                indexDatabase = index + 1
+
                 actionsLayout.deleteFile(index)
+
+                if self.fileDict.__len__() != 0:
+                    self.fileDict.pop(self.fileDict[index].fileName)
+                    self.fileDict.pop(index)
+
+                self.mainWindow.databaseProcessor.deleteFile(indexDatabase)
+                self.mainWindow.rearrangeFileIds(index)
         else:
             dialogBox.setText("There is no file to delete!")
             dialogBox.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -388,20 +414,10 @@ class FileBoxLayout(QVBoxLayout):
         self.filesLayout.addFile(fileClass, setChecked = setChecked)
  
     def deleteFile(self, index):
-        indexDatabase = index + 1
         fileTextLayout = self.mainWindow.fileTextLayout
-        infoBoxLayout = self.mainWindow.fileInfoLayout
 
         self.filesLayout.deleteFile(index)
         fileTextLayout.editBoxes(0)
-        infoBoxLayout.editBoxes(0)
-
-        if self.fileDict.__len__() != 0:
-            self.fileDict.pop(self.fileDict[index].fileName)
-            self.fileDict.pop(index)
-
-        self.mainWindow.databaseProcessor.deleteFile(indexDatabase)
-        self.mainWindow.rearrangeFileIds(index)
 
     def rearrangeFileIds(self, index):
         self.filesLayout.rearrangeFileIds(index)
@@ -418,23 +434,40 @@ class ComparisonLayout(QVBoxLayout):
         self.filesLayout = FilesLayout(exclusive=False)
         self.buttonsLayout = QHBoxLayout()
 
+        self.buttonGroup = QButtonGroup(self)
+
+        self.buttonJaccardCompare = QRadioButton()
+        self.buttonJaccardCompare.setText("Jaccard")
+        self.buttonJaccardCompare.setChecked(True)
+        self.buttonGroup.addButton(self.buttonJaccardCompare)
+        self.buttonsLayout.addWidget(self.buttonJaccardCompare)
+ 
+        self.buttonCustomCompare = QRadioButton()
+        self.buttonCustomCompare.setText("Custom")
+        self.buttonGroup.addButton(self.buttonCustomCompare)
+        self.buttonsLayout.addWidget(self.buttonCustomCompare)
+
         self.buttonCompare = QPushButton()
         self.buttonCompare.setText("Compare")
-        self.buttonsLayout.addWidget(self.buttonCompare)
         
         self.addLayout(self.filesLayout)
         self.addStretch()
         self.addLayout(self.buttonsLayout)
+        self.addWidget(self.buttonCompare)
 
         self.buttonCompare.clicked.connect(self.buttonComparePressed)
 
     def hide(self):
         self.buttonCompare.hide()
+        self.buttonCustomCompare.hide()
+        self.buttonJaccardCompare.hide()
         for button in self.filesLayout.getButtons():
             button.hide()
 
     def show(self):
         self.buttonCompare.show()
+        self.buttonCustomCompare.show()
+        self.buttonJaccardCompare.show()
         for button in self.filesLayout.getButtons():
             button.show()
 
@@ -446,6 +479,16 @@ class ComparisonLayout(QVBoxLayout):
 
     def rearrangeFileIds(self, index):
         self.filesLayout.rearrangeFileIds(index)
+
+    def findSimilarity(self, text1, text2):
+        if self.buttonGroup.checkedId() == -1:
+            return 0
+        elif self.buttonJaccardCompare.isChecked():
+            similarity = self.nltkProcessor.jaccardSimilarity(text1, text2)
+            return round(similarity * 100, 3)
+        elif self.buttonCustomCompare.isChecked():
+            similarity = self.nltkProcessor.customFreqSimilarity(text1, text2)
+            return round(similarity * 100, 3)
 
     def buttonComparePressed(self):
         selectedIds = []
@@ -468,8 +511,7 @@ class ComparisonLayout(QVBoxLayout):
                     if id1 < id2:
                         text1 = file1.textInfo["TextFiltered"]
                         text2 = file2.textInfo["TextFiltered"]
-                        average = self.nltkProcessor.customFreqSimilarity(text1, text2)
-                        average = round(average * 100, 3)
+                        average = self.findSimilarity(text1, text2)
 
                         fileMatrix[f"{id1}, {id2}"] = average
                         fileMatrix[f"{id2}, {id1}"] = average
@@ -551,11 +593,17 @@ class fileTextLayout(QVBoxLayout):
         super().__init__()
         self.mainWindow = mainWindow
         mainWindow.fileTextLayout = self
+
+        self.currentText = ""
+
+        self.searchLayout = SearchLayout(mainWindow)
+        self.addLayout(self.searchLayout)
         
         self.scrollArea = QScrollArea()
         self.scrollArea.setWidgetResizable(True)
 
         self.textBox = QLabel()
+        self.textBox.setTextFormat(Qt.TextFormat.RichText)
         self.fileInfoLayout = FileInfoLayout(MainWindow)
         self.textBox.setFrameStyle(2)
         self.scrollArea.setWidget(self.textBox)
@@ -569,24 +617,59 @@ class fileTextLayout(QVBoxLayout):
             self.textBox.setText("")
             self.fileInfoLayout.editBoxes(0)
         else:
-            text = input.text
-            self.textBox.setText(text)
+            self.currentText = input.text.replace("\n", "<br>")
+            self.textBox.setText(self.currentText)
             self.fileInfoLayout.editBoxes(input)
 
     def show(self):
+        self.searchLayout.show()
         self.scrollArea.show()
         self.textBox.show()
         self.fileInfoLayout.show()
 
     def hide(self):
+        self.searchLayout.hide()
         self.scrollArea.hide()
         self.textBox.hide()
         self.fileInfoLayout.hide()
 
+class SearchLayout(QHBoxLayout):
+    def __init__(self, mainWindow):
+        super().__init__()
+        self.mainWindow = mainWindow
+        mainWindow.searchLayout = self
+
+        self.searchText = QLabel("Search:")
+        self.searchBox = QLineEdit()
+        self.searchButton = QPushButton()
+        self.searchButton.setText("Search")
+        self.addWidget(self.searchText)
+        self.addWidget(self.searchBox)
+        self.addWidget(self.searchButton)
+
+        self.searchButton.clicked.connect(self.searchButtonPressed)
+
+    def show(self):
+        self.searchText.show()
+        self.searchBox.show()
+        self.searchButton.show()
+
+    def hide(self):
+        self.searchText.hide()
+        self.searchBox.hide()
+        self.searchButton.hide()
+
+    def searchButtonPressed(self):
+        searchText = self.searchBox.text()
+        currentText = self.mainWindow.fileTextLayout.currentText
+        currentText = currentText.replace(searchText, "<b><span style = 'color: lightgreen'>" + searchText + "</span></b>")
+
+        self.mainWindow.fileTextLayout.textBox.setText(currentText)
+
 class FileInfoLayout(QVBoxLayout):
     def __init__(self, mainWindow):
         super().__init__()
-        
+
         self.mainWindow = mainWindow
         self.mainWindow.fileInfoLayout = self
 

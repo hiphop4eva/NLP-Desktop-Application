@@ -65,9 +65,7 @@ class nltkProcessor:
 
         jaccardIndex = len(textCommonUnique) / len(textUnion)
 
-        textCommonFrequency = nltk.FreqDist(textCommon)
-
-        return jaccardIndex, textCommonFrequency
+        return jaccardIndex
     
     def setFrequency(self, text, freq):
         freq = nltk.FreqDist(text) 

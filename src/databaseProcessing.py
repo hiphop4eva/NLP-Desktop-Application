@@ -1,5 +1,5 @@
 import mysql.connector
-password = open("src/password/password.txt").read()
+password = open("password/password.txt").read()
 
 database = mysql.connector.connect(
     host="localhost",
