@@ -1,4 +1,3 @@
-import mysql.connector
 from pandas import DataFrame, Series, json_normalize, read_json
 import json
 from os.path import isfile
