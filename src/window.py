@@ -491,6 +491,7 @@ class ComparisonLayout(QVBoxLayout):
         self.buttonCompare.hide()
         self.buttonCustomCompare.hide()
         self.buttonJaccardCompare.hide()
+        self.buttonTfidfCompare.hide()
         for button in self.filesLayout.getButtons():
             button.hide()
 
@@ -498,6 +499,7 @@ class ComparisonLayout(QVBoxLayout):
         self.buttonCompare.show()
         self.buttonCustomCompare.show()
         self.buttonJaccardCompare.show()
+        self.buttonTfidfCompare.show()
         for button in self.filesLayout.getButtons():
             button.show()
 
