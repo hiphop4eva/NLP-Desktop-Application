@@ -67,9 +67,6 @@ class nltkProcessor:
 
         return jaccardIndex
     
-    def setFrequency(self, text, freq):
-        freq = nltk.FreqDist(text) 
-
     def customFreqSimilarity(self, text1, text2):
         text1Freq = nltk.FreqDist(text1)
         text2Freq = nltk.FreqDist(text2)

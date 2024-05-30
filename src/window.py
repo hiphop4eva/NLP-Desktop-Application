@@ -30,8 +30,9 @@ class MainWindow(QDialog):
         self.databaseProcessor = databaseProcessor
 
         self.fileDict = {}
+        self.jsonDir = "files/files.json"
 
-        self.databaseProcessor.readJson()
+        self.databaseProcessor.readJson(self.jsonDir)
         self.fileDf = self.databaseProcessor.fileDf
 
         self.setWindowTitle("NLP Application")
@@ -62,7 +63,6 @@ class MainWindow(QDialog):
             textInfo, icon, iconType = self.fileProcessor.readFile(fileDir, text=text)
             file = self.fileProcessor.initFile(name, fileDir, icon, text, textInfo)
 
-            rowCount = self.fileDf.shape[0]
             self.actionsLayout.addFile(file, setChecked = False)
             self.fileDict[index] = file
             self.fileDict[name] = file
@@ -92,7 +92,7 @@ class MainWindow(QDialog):
         print(self.fileDf)
         print("-------------------------")
 
-        self.databaseProcessor.writeJson()
+        self.databaseProcessor.writeJson(self.jsonDir)
         self.actionsLayout.rearrangeFileIds(index)
 
 class MainLayout(QGridLayout):
@@ -184,6 +184,10 @@ class ActionsLayout(QVBoxLayout):
     def buttonComparisonPressed(self):
         self.setLayout(self.comparisonLayout)
         self.mainWindow.textMainLayout.setLayout(self.mainWindow.comparisonTextLayout)
+        mainText = ""
+        for i in range(self.mainWindow.fileDf.shape[0]):
+            mainText += self.mainWindow.fileDf.loc[i, "ComparisonResults"]
+        self.mainWindow.comparisonTextLayout.editBoxes(mainText)
 
     def buttonInfoPressed(self):
         self.setLayout(self.informationFileLayout)
@@ -387,7 +391,7 @@ class FileBoxLayout(QVBoxLayout):
 
         if self.fileDict.get(file.fileName) == None:
             actionsLayout.addFile(file)
-            databaseProcessor.writeJson()
+            databaseProcessor.writeJson(self.mainWindow.jsonDir)
             fileTextLayout.editBoxes(file)
         else:
             dialogBox = QMessageBox(self.mainWindow)
@@ -462,6 +466,11 @@ class ComparisonLayout(QVBoxLayout):
         self.buttonJaccardCompare.setChecked(True)
         self.buttonGroup.addButton(self.buttonJaccardCompare)
         self.buttonsLayout.addWidget(self.buttonJaccardCompare)
+
+        self.buttonTfidfCompare = QRadioButton()
+        self.buttonTfidfCompare.setText("TF-IDF")
+        self.buttonGroup.addButton(self.buttonTfidfCompare)
+        self.buttonsLayout.addWidget(self.buttonTfidfCompare)
  
         self.buttonCustomCompare = QRadioButton()
         self.buttonCustomCompare.setText("Custom")
@@ -510,8 +519,21 @@ class ComparisonLayout(QVBoxLayout):
         elif self.buttonCustomCompare.isChecked():
             similarity = self.nltkProcessor.customFreqSimilarity(text1, text2)
             return round(similarity * 100, 3)
+        elif self.buttonTfidfCompare.isChecked():
+            similarity = self.nltkProcessor.tfidfSimilarity(text1, text2)
+            return round(similarity * 100, 3)
 
     def buttonComparePressed(self):
+        if self.buttonTfidfCompare.isChecked():
+            dialogBox = QMessageBox()
+            dialogBox.setStandardButtons(QMessageBox.StandardButton.No | QMessageBox.StandardButton.Yes)
+            dialogBox.setWindowTitle("Warning")
+            dialogBox.setText("Are you sure you want to compare with TF-IDF? It may take a long time on larger files.")
+            dialogBox.exec()
+
+            if dialogBox.clickedButton().text() == "&No":
+                return
+            
         selectedIds = []
         buttons = self.filesLayout.getButtons()
         for button in buttons:
@@ -519,13 +541,14 @@ class ComparisonLayout(QVBoxLayout):
                 id = self.filesLayout.fileButtonGroup.id(button)
                 selectedIds.append(id)
         files = [self.fileDict[id] for id in selectedIds]
+        partText = ""
         mainText = ""
         fileMatrix = {}
         id1 = 0
         id2 = 0
 
         for file1 in files:
-            mainText += file1.fileName + ":\n"
+            partText = file1.fileName + ":\n"
             id2 = 0
             for file2 in files:
                 if file1 != file2:
@@ -537,12 +560,15 @@ class ComparisonLayout(QVBoxLayout):
                         fileMatrix[f"{id1}, {id2}"] = average
                         fileMatrix[f"{id2}, {id1}"] = average
 
-                    mainText += file2.fileName + ": %" + str(fileMatrix[f"{id1}, {id2}"]) + "\n"
+                    partText += file2.fileName + ": %" + str(fileMatrix[f"{id1}, {id2}"]) + "\n"
 
                 id2 += 1
             id1 += 1
-            mainText += "\n\n"
+            partText += "\n\n"
+            self.mainWindow.fileDf.loc[id1, "ComparisonResults"] = partText
+            mainText += partText
         
+        self.mainWindow.databaseProcessor.writeJson(self.mainWindow.jsonDir)
         self.mainWindow.comparisonTextLayout.editBoxes(mainText)
 
 class InformationFileLayout(QVBoxLayout):
